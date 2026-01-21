@@ -2,21 +2,26 @@
 
 // Image imports
 declare module "*.png" {
-  const src: string
-  export default src
+  const src: string;
+  export default src;
 }
 
 declare module "*.jpg" {
-  const src: string
-  export default src
+  const src: string;
+  export default src;
 }
 
 declare module "*.jpeg" {
-  const src: string
-  export default src
+  const src: string;
+  export default src;
 }
 
 declare module "*.svg" {
-  const src: string
-  export default src
+  const src: string;
+  export default src;
+}
+
+declare module "*.tar.gz" {
+  const src: string;
+  export default src;
 }

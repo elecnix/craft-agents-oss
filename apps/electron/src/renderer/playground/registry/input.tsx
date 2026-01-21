@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils'
 import { MODELS } from '@config/models'
 import { toast } from 'sonner'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+import { EscapeInterruptProvider } from '@/context/EscapeInterruptContext'
+import { ensureMockElectronAPI } from '../mock-utils'
 
 // Import REAL components from the main app
 import { FreeFormInput } from '@/components/app-shell/input/FreeFormInput'
@@ -49,6 +51,63 @@ function FreeFormInputPlayground({
   onInputChange,
   unstyled = false,
 }: FreeFormInputPlaygroundProps) {
+  const speechAudioContextRef = React.useRef<AudioContext | null>(null)
+  const speechAudioBufferRef = React.useRef<AudioBuffer | null>(null)
+  const speechAudioSourceRef = React.useRef<AudioBufferSourceNode | null>(null)
+  const speechAudioDestinationRef = React.useRef<MediaStreamAudioDestinationNode | null>(null)
+  const speechAudioSilenceRef = React.useRef<OscillatorNode | null>(null)
+  const speechAudioSilenceGainRef = React.useRef<GainNode | null>(null)
+
+  const getSpeechAudioStream = React.useCallback(async () => {
+    let audioContext = speechAudioContextRef.current
+    if (!audioContext) {
+      audioContext = new AudioContext()
+      speechAudioContextRef.current = audioContext
+    }
+
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+
+    if (!speechAudioBufferRef.current) {
+      const response = await fetch('/sample-voice.wav')
+      const buffer = await response.arrayBuffer()
+      speechAudioBufferRef.current = await audioContext.decodeAudioData(buffer)
+    }
+
+    speechAudioSourceRef.current?.stop()
+    const source = audioContext.createBufferSource()
+    source.buffer = speechAudioBufferRef.current
+    const playbackGain = audioContext.createGain()
+    playbackGain.gain.value = 2.5
+
+    const destination = speechAudioDestinationRef.current ?? audioContext.createMediaStreamDestination()
+    speechAudioDestinationRef.current = destination
+
+    if (!speechAudioSilenceRef.current) {
+      const silenceOscillator = audioContext.createOscillator()
+      const silenceGain = audioContext.createGain()
+      silenceGain.gain.value = 0
+      silenceOscillator.connect(silenceGain)
+      silenceGain.connect(destination)
+      silenceOscillator.start()
+      speechAudioSilenceRef.current = silenceOscillator
+      speechAudioSilenceGainRef.current = silenceGain
+    }
+    source.connect(playbackGain)
+    playbackGain.connect(destination)
+    playbackGain.connect(audioContext.destination)
+    const startAt = audioContext.currentTime + 0.5
+    source.start(startAt)
+    speechAudioSourceRef.current = source
+
+    return destination.stream
+  }, [])
+
+  React.useEffect(() => {
+    ensureMockElectronAPI()
+  }, [])
+
   // Local state for options since playground doesn't have parent state management
   const [model, setModel] = React.useState(currentModel)
   const [ultrathink, setUltrathink] = React.useState(ultrathinkEnabled)
@@ -59,6 +118,7 @@ function FreeFormInputPlayground({
   React.useEffect(() => setMode(permissionMode), [permissionMode])
 
   return (
+    <EscapeInterruptProvider>
     <FreeFormInput
       placeholder={placeholder}
       disabled={disabled}
@@ -71,10 +131,12 @@ function FreeFormInputPlayground({
       onPermissionModeChange={setMode}
       inputValue={inputValue}
       onInputChange={onInputChange}
+        speechAudioStreamFactory={getSpeechAudioStream}
       onSubmit={() => {}} // No-op for playground
       onStop={() => {}} // No-op for playground
       unstyled={unstyled}
     />
+    </EscapeInterruptProvider>
   )
 }
 
@@ -137,6 +199,10 @@ function createMockStructuredInput(mode: HeightMode): StructuredInputState | und
 }
 
 function InputTransitions() {
+  React.useEffect(() => {
+    ensureMockElectronAPI()
+  }, [])
+
   const [heightMode, setHeightMode] = React.useState<HeightMode>('freeform')
   const [inputValue, setInputValue] = React.useState('')
   const [model, setModel] = React.useState('claude-sonnet-4-20250514')
@@ -150,6 +216,7 @@ function InputTransitions() {
   }, [])
 
   return (
+    <EscapeInterruptProvider>
     <div className="flex flex-col h-full bg-background">
       {/* Top: Mode Switcher */}
       <div className="shrink-0 p-4 border-b border-border/50">
@@ -213,6 +280,7 @@ function InputTransitions() {
         </div>
       </div>
     </div>
+    </EscapeInterruptProvider>
   )
 }
 
